@@ -345,15 +345,18 @@ const DynamicComponentRenderer: React.FC<DynamicComponentRendererProps> = ({
     }
   }, [componentCode, analyserNode, hasErrored, isAudioActive, visualizationMode]);
 
-  if (error || hasErrored) {
+  // Handle initial render when error occurs
+  if (hasErrored) {
     return (
-      <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+      <div 
+        className="p-4 bg-red-50 border border-red-200 rounded-md w-full h-full flex flex-col items-center justify-center text-center"
+      >
         <h3 className="text-lg font-semibold text-red-700 mb-2">Error Rendering Visualization</h3>
-        <p className="text-red-600">{error || 'The visualization failed to render properly.'}</p>
+        <p className="text-red-600 text-sm">{error || 'The visualization failed to render properly.'}</p>
         {showCode && (
-          <div className="mt-4">
-            <h4 className="font-semibold mb-1">Visualization Code:</h4>
-            <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-auto text-xs max-h-96">
+          <div className="mt-4 w-full max-w-lg">
+            <h4 className="font-semibold mb-1 text-left">Visualization Code:</h4>
+            <pre className="bg-gray-900 text-gray-100 p-3 rounded-md overflow-auto text-xs max-h-60 text-left">
               {componentCode}
             </pre>
           </div>
@@ -365,10 +368,15 @@ const DynamicComponentRenderer: React.FC<DynamicComponentRendererProps> = ({
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-full"
-      style={{ position: 'relative', overflow: 'hidden' }}
+      className="w-full h-full relative"
+      style={{ display: 'block' }}
     >
-      {/* Canvas will be created and appended here */}
+      {/* Canvas will be appended here by useEffect */}
+      {showCode && (
+        <div className="absolute inset-0 bg-black/80 p-4 overflow-auto z-10">
+          <pre className="text-xs text-green-400 whitespace-pre-wrap">{componentCode}</pre>
+        </div>
+      )}
     </div>
   );
 };

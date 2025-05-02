@@ -25,7 +25,7 @@ export async function generateComponent(formData: FormData | string): Promise<Co
     });
 
     const response = await openai.chat.completions.create({
-      model: "o4-mini",
+      model: "gpt-4.1",
       messages: [
         {
           role: "system",

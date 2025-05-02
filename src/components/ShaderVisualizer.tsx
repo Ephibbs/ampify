@@ -1,8 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { useMemo } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
 interface ShaderVisualizerProps {
@@ -11,117 +9,109 @@ interface ShaderVisualizerProps {
   analyserNode: AnalyserNode | null;
 }
 
-const ShaderMaterial = ({ 
-  fragmentShader, 
-  vertexShader, 
-  analyserNode 
-}: ShaderVisualizerProps) => {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const [audioData, setAudioData] = useState<Uint8Array | null>(null);
-  const [time, setTime] = useState(0);
+const ShaderVisualizer: React.FC<ShaderVisualizerProps> = ({
+  fragmentShader,
+  vertexShader,
+  analyserNode,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const timeDataArrayRef = useRef<Uint8Array | null>(null);
+  const freqDataArrayRef = useRef<Uint8Array | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null);
 
-  
-  // Update local shader state when props change
   useEffect(() => {
-    console.log('[ShaderVisualizer] Shader props changed, updating material');
-    
-    // Update material shader if it exists
-    if (materialRef.current) {
-      materialRef.current.fragmentShader = fragmentShader;
-      materialRef.current.vertexShader = vertexShader;
-      materialRef.current.needsUpdate = true;
-      console.log('[ShaderVisualizer] Material updated');
-    }
-  }, [fragmentShader, vertexShader]);
-  
-  useEffect(() => {
-    if (analyserNode) {
-      const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
-      setAudioData(dataArray);
-    }
-  }, [analyserNode]);
+    if (!canvasRef.current || !analyserNode) return;
 
-  // Create uniform textures once
-  const audioTexture = useMemo(() => {
-    const texture = new THREE.DataTexture(
-      new Uint8Array(128).fill(0),
-      128,
-      1,
-      THREE.RedFormat,
-      THREE.UnsignedByteType
-    );
-    texture.needsUpdate = true;
-    return texture;
-  }, []);
+    const canvas = canvasRef.current;
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    rendererRef.current = renderer;
+    renderer.setPixelRatio(window.devicePixelRatio);
 
-  // Update shader uniforms on each frame
-  useFrame((_, delta) => {
-    if (materialRef.current) {
-      setTime(prevTime => prevTime + delta);
-      
-      if (analyserNode && audioData) {
-        analyserNode.getByteFrequencyData(audioData);
-        audioTexture.image.data = audioData;
-        audioTexture.needsUpdate = true;
-        
-        materialRef.current.uniforms.audioData.value = audioTexture;
-        materialRef.current.uniforms.time.value = time;
+    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+    cameraRef.current = camera;
+    camera.position.z = 1;
+
+    const scene = new THREE.Scene();
+
+    // Setup audio data buffers
+    timeDataArrayRef.current = new Uint8Array(analyserNode.fftSize);
+    freqDataArrayRef.current = new Uint8Array(analyserNode.frequencyBinCount);
+
+    // Uniforms
+    const uniforms = {
+      u_time: { value: 0.0 },
+      u_resolution: { value: new THREE.Vector2() },
+      u_audio_freq: { value: new Float32Array(analyserNode.frequencyBinCount).fill(0) },
+      u_audio_time: { value: new Float32Array(analyserNode.fftSize).fill(0) },
+    };
+
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const material = new THREE.ShaderMaterial({
+      uniforms: uniforms,
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+    });
+
+    const plane = new THREE.Mesh(geometry, material);
+    scene.add(plane);
+
+    const handleResize = () => {
+      if (!canvas || !renderer || !camera) return;
+      const parent = canvas.parentElement;
+      if (!parent) return;
+
+      const width = parent.clientWidth;
+      const height = parent.clientHeight;
+
+      canvas.width = width;
+      canvas.height = height;
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      uniforms.u_resolution.value.set(width, height);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial size setup
+
+    const animate = (time: number) => {
+      animationFrameIdRef.current = requestAnimationFrame(animate);
+
+      if (analyserNode && timeDataArrayRef.current && freqDataArrayRef.current) {
+        analyserNode.getByteFrequencyData(freqDataArrayRef.current);
+        analyserNode.getByteTimeDomainData(timeDataArrayRef.current);
+
+        // Normalize and update uniforms
+        for (let i = 0; i < analyserNode.frequencyBinCount; i++) {
+          uniforms.u_audio_freq.value[i] = (freqDataArrayRef.current[i] / 255.0);
+        }
+        for (let i = 0; i < analyserNode.fftSize; i++) {
+          uniforms.u_audio_time.value[i] = (timeDataArrayRef.current[i] / 128.0) - 1.0; // Normalize to -1 to 1
+        }
       }
-    }
-  });
 
-  // Prepare uniforms
-  const uniforms = useMemo(
-    () => ({
-      time: { value: 0 },
-      audioData: { value: audioTexture },
-      resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
-    }),
-    [audioTexture]
-  );
+      uniforms.u_time.value = time * 0.001; // Convert ms to seconds
+      renderer.render(scene, camera);
+    };
+
+    animate(0);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+      renderer.dispose();
+    };
+  }, [fragmentShader, vertexShader, analyserNode]);
 
   return (
-    <mesh>
-      <planeGeometry args={[2, 2]} />
-      <shaderMaterial
-        ref={materialRef}
-        key={`${fragmentShader.length}-${vertexShader.length}`}
-        fragmentShader={fragmentShader}
-        vertexShader={vertexShader}
-        uniforms={uniforms}
-      />
-    </mesh>
-  );
-};
-
-const ShaderVisualizer = ({ 
-  fragmentShader, 
-  vertexShader, 
-  analyserNode 
-}: ShaderVisualizerProps) => {
-  // Add a counter for shader changes to force remount of Canvas
-  const [shaderCounter, setShaderCounter] = useState(0);
-  
-  // Force a remount when shaders change to ensure Three.js updates correctly
-  useEffect(() => {
-    setShaderCounter(prev => prev + 1);
-    console.log('[ShaderVisualizer] Detected shader change, forcing remount');
-  }, [fragmentShader, vertexShader]);
-  
-  return (
-    <div className="w-full h-full">
-      <Canvas 
-        key={`canvas-${shaderCounter}`}
-        className="w-full h-full"
-        style={{ position: 'absolute' }}
-      >
-        <ShaderMaterial
-          fragmentShader={fragmentShader}
-          vertexShader={vertexShader}
-          analyserNode={analyserNode}
-        />
-      </Canvas>
-    </div>
+    <canvas 
+      ref={canvasRef} 
+      className="w-full h-full block absolute inset-0" // Ensure canvas fills container and uses absolute positioning
+    />
   );
 };
 
