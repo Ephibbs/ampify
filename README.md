@@ -1,6 +1,10 @@
-# AI Music Visualizer
+# Ampify: AI Music Visualizer
 
 A Next.js application that uses AI to generate custom WebGL shaders that visualize music in real-time.
+
+Voted 3rd most creative out of 30 projects at a Sentry All Things Web Hackathon!
+
+![Hackathon Results](https://github.com/ssaanndwich/ampify/blob/main/public/sentryhackathon.jpg)
 
 ## Features
 
